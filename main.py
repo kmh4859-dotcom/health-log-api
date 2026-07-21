@@ -1,10 +1,29 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+import json
+import os
+
 
 app = FastAPI(title="마이 헬스 로그 API", version="1.0")
 
+DATA_FILE = "data.json"
 records = []
 next_id = 1
+
+
+def save_data():
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json. dump({"records": records, "next_id": next_id}, f, ensure_ascii=False, indent=2)
+
+
+def load_data():
+    global records, next_id
+    if os.path.exists(DATA_FILE):
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            records = data["records"]
+            next_id = data["next_id"]
+
 
 class RecordIn(BaseModel):
     date: str
@@ -16,6 +35,9 @@ class RecordIn(BaseModel):
     steps: int = 0
     sleep_hours: float = 0.0
     memo: str = ""
+
+
+load_data()
 
 
 def calculate_bmi(weight, height):
@@ -85,6 +107,7 @@ def create_record(record: RecordIn):
     ) 
     next_id += 1
     records.append(new_record)
+    save_data()    
     return new_record
 
 @app.get("/records")
@@ -108,6 +131,7 @@ def delete_record(record_id: int):
      for record in records:
           if record["id"] == record_id:
                records.remove(record)
+               save_data()
                return {"message": "삭제되었습니다"}
      raise HTTPException(status_code=404, detail="기록을 찾을 수 없습니다")
 
@@ -129,5 +153,37 @@ def update_record(record_id: int, record:RecordIn):
                    updated["sugar_category"]
               )
               records[i] = updated
+              save_data()
               return updated
      raise HTTPException(status_code=404, detail="기록을  찾을 수 없습니다")
+
+
+@app.get("/search")
+def search_records(start: str, end: str):
+    result = []
+    for record in records:
+         if start <= record["date"] <= end:
+              result.append(record)
+    return {
+         "count": len(result),
+         "records": result
+    }          
+
+
+@app.get("/stats")
+def get_stats():
+    if len(records) == 0:
+        return {"message": "기록이 없습니다"}
+                       
+    total_weight = 0
+    total_bmi = 0
+    for record in records:
+        total_weight += record["weight"]
+        total_bmi += record["bmi"]
+
+    count = len(records)
+    return {
+         "count": count,
+         "avg_weight": round(total_weight / count, 1),
+         "avg_bmi": round(total_bmi / count, 1)
+    }
