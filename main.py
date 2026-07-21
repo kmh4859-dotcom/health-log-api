@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import json
 import os
+from fastapi.responses import FileResponse
 
 
 app = FastAPI(title="마이 헬스 로그 API", version="1.0")
@@ -88,7 +89,7 @@ def make_warnings(bmi_category, bp_category, sugar_category):
 
 @app.get("/")
 def read_root():
-    return {"message": "마이 헬스 로그 API"}
+    return FileResponse("index.html")
 
 @app.post("/records")
 def create_record(record: RecordIn):

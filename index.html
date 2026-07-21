@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>마이 헬스 로그</title>
+    <style>
+        body { font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 0 20px; }
+        h1 { color: #2d6cdf; }
+        input { width: 100%; padding: 8px; margin: 5px 0; box-sizing: border-box; }
+        button { background: #2d6cdf; color: white; border: none; padding: 10px 20px; cursor: pointer; border-radius: 4px; }
+        .record { border: 1px solid #ddd; padding: 12px; margin: 10px 0; border-radius: 6px; }
+        .warning { color: #d33; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>마이 헬스 로그</h1>
+
+    <h2>기록 입력</h2>
+    <input id="date" placeholder="날짜 (예: 2026-07-21)">
+    <input id="weight" type="number" placeholder="몸무게 (kg)">
+    <input id="height" type="number" placeholder="키 (cm)">
+    <input id="systolic" type="number" placeholder="수축기 혈압">
+    <input id="diastolic" type="number" placeholder="이완기 혈압">
+    <input id="blood_sugar" type="number" placeholder="공복 혈당">
+    <button onclick="addRecord()">저장</button>
+
+    <h2>기록 목록</h2>
+    <button onclick="loadRecords()">새로고침</button>
+    <div id="records"></div>
+
+    <script>
+        async function addRecord() {
+            const data = {
+                date: document.getElementById("date").value,
+                weight: parseFloat(document.getElementById("weight").value),
+                height: parseFloat(document.getElementById("height").value),
+                systolic: parseInt(document.getElementById("systolic").value),
+                diastolic: parseInt(document.getElementById("diastolic").value),
+                blood_sugar: parseInt(document.getElementById("blood_sugar").value)
+            };
+            await fetch("/records", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(data)
+            });
+            loadRecords();
+        }
+
+        async function loadRecords() {
+            const res = await fetch("/records");
+            const result = await res.json();
+            let html = "";
+            for (const r of result.records) {
+                let warningText = "";
+                if (r.warnings.length > 0) {
+                    warningText = "<p class='warning'>⚠️ " + r.warnings.join(" / ") + "</p>";
+                }
+                html += "<div class='record'>" +
+                    "<b>" + r.date + "</b> (id: " + r.id + ")<br>" +
+                    "몸무게 " + r.weight + "kg, 키 " + r.height + "cm<br>" +
+                    "BMI " + r.bmi + " (" + r.bmi_category + "), 혈압 " + r.bp_category + ", 혈당 " + r.sugar_category +
+                    warningText +
+                    "</div>";
+            }
+            document.getElementById("records").innerHTML = html;
+        }
+
+        loadRecords();
+    </script>
+</body>
+</html>
