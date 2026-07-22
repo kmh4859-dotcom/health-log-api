@@ -11,20 +11,22 @@ app = FastAPI(title="마이 헬스 로그 API", version="1.0")
 DATA_FILE = "data.json"
 records = []
 next_id = 1
+goal = {"target_weight": None}
 
 
 def save_data():
     with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json. dump({"records": records, "next_id": next_id}, f, ensure_ascii=False, indent=2)
+        json. dump({"records": records, "next_id": next_id, "goal": goal}, f, ensure_ascii=False, indent=2)
 
 
 def load_data():
-    global records, next_id
+    global records, next_id, goal
     if os.path.exists(DATA_FILE):
         with open(DATA_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
             records = data["records"]
             next_id = data["next_id"]
+            goal = data.get("goal", {"target_weight": None})
 
 
 class RecordIn(BaseModel):
@@ -38,6 +40,10 @@ class RecordIn(BaseModel):
     sleep_hours: float = 0.0
     memo: str = ""
 
+
+class GoalIn(BaseModel):
+    target_weight: float
+    
 
 load_data()
 
@@ -240,4 +246,30 @@ def weekly_report():
          "this_week_avg_weight": this_week,
          "last_week_avg_weight": last_week,
          "change": change
+    }
+
+
+@app.post("/goal")
+def set_goal(goal_data: GoalIn):
+    global goal
+    goal["target_weight"] = goal_data.target_weight
+    save_data()
+    return goal
+
+
+@app.get("/goal")
+def get_goal():
+    if goal["target_weight"] is None:
+         return {"message": "기록이 설정되지 않았습니다."}
+    if len(records) == 0:
+         return {"message": "기록이 없습니다"}
+    
+    latest_weight = records[-1]["weight"]
+    target = goal["target_weight"]
+    remaining = round(latest_weight - target, 1)
+
+    return {
+         "target_weight": target,
+         "current_weight": latest_weight,
+         "remaining": remaining
     }

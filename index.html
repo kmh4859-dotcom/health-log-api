@@ -26,6 +26,12 @@
     <input id="sleep_hours" type="number" placeholder="수면 시간">
     <button onclick="addRecord()">저장</button>
 
+    <h2>목표 관리</h2>
+    <input id="target_weight" type="number" placeholder="목표 체중 (kg)">
+    <button onclick="setGoal()">목표 설정</button>
+    <button onclick="loadGoal()">달성률 확인</button>
+    <div id="goal"></div>
+
     <h2>기록 목록</h2>
     <button onclick="loadRecords()">새로고침</button>
     <div id="records"></div>
@@ -70,6 +76,38 @@
             }
             document.getElementById("records").innerHTML = html;
         }
+
+
+        async function setGoal() {
+            const data = {
+                target_weight: parseFloat(document.getElementById("target_weight").value)
+            };
+            await fetch("/goal", {
+                method: "POST",
+                headers: { "content-Type": "application/json" },
+                body: JSON.stringify(data)
+            });
+            loadGoal();
+        }
+
+
+        async function loadGoal() {
+            const res = await fetch("/goal");
+            const result = await res.json();
+            let html = "";
+            if (result.message) {
+                html = "<p>" + result.message + "</p>";                
+            } else {
+                html = "<div class='record'>" +
+                    "목표 체중: " + result.target_weight + "kg<br>" +
+                    "현재 체중: " + result.current_weight + "kg<br>" +
+                    "<b>남은 양: " + result.remaining + "kg</b>" +
+                    "</div>";
+            }
+            document.getElementById("goal").innerHTML = html;
+        }
+
+
 
         loadRecords();
     </script>
