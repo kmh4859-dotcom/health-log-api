@@ -3,6 +3,7 @@ from pydantic import BaseModel
 import json
 import os
 from fastapi.responses import FileResponse
+from datetime import datetime, timedelta
 
 
 app = FastAPI(title="마이 헬스 로그 API", version="1.0")
@@ -209,4 +210,34 @@ def get_stats():
          "count": count,
          "avg_weight": round(total_weight / count, 1),
          "avg_bmi": round(total_bmi / count, 1)
+    }
+
+
+@app.get("/weekly-report")
+def weekly_report():
+    today = datetime.now()
+    week1_start = today - timedelta(days=7)
+    week2_start = today - timedelta(days=14)
+
+    def avg_weight(start, end):
+        selected = []
+        for r in records:
+            record_date = datetime.strptime(r["date"], "%Y-%m-%d")
+            if start <= record_date <end:
+                selected.append(r["weight"])
+        if len(selected) == 0:
+             return None
+        return round(sum(selected) / len(selected), 1)
+    
+    this_week = avg_weight(week1_start, today)
+    last_week = avg_weight(week2_start, week1_start)
+
+    change = None
+    if this_week is not None and last_week is not None:
+         change = round(this_week - last_week, 1)
+
+    return {
+         "this_week_avg_weight": this_week,
+         "last_week_avg_weight": last_week,
+         "change": change
     }
