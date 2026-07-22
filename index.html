@@ -22,6 +22,8 @@
     <input id="systolic" type="number" placeholder="수축기 혈압">
     <input id="diastolic" type="number" placeholder="이완기 혈압">
     <input id="blood_sugar" type="number" placeholder="공복 혈당">
+    <input id="steps" type="number" placeholder="걸음 수">
+    <input id="sleep_hours" type="number" placeholder="수면 시간">
     <button onclick="addRecord()">저장</button>
 
     <h2>기록 목록</h2>
@@ -36,7 +38,9 @@
                 height: parseFloat(document.getElementById("height").value),
                 systolic: parseInt(document.getElementById("systolic").value),
                 diastolic: parseInt(document.getElementById("diastolic").value),
-                blood_sugar: parseInt(document.getElementById("blood_sugar").value)
+                blood_sugar: parseInt(document.getElementById("blood_sugar").value),
+                steps: parseInt(document.getElementById("steps").value),
+                sleep_hours: parseFloat(document.getElementById("sleep_hours").value)
             };
             await fetch("/records", {
                 method: "POST",
@@ -58,7 +62,9 @@
                 html += "<div class='record'>" +
                     "<b>" + r.date + "</b> (id: " + r.id + ")<br>" +
                     "몸무게 " + r.weight + "kg, 키 " + r.height + "cm<br>" +
-                    "BMI " + r.bmi + " (" + r.bmi_category + "), 혈압 " + r.bp_category + ", 혈당 " + r.sugar_category +
+                    "BMI " + r.bmi + " (" + r.bmi_category + "), 혈압 " + r.bp_category + ", 혈당 " + r.sugar_category + "<br>" +
+                    "걸음 " + r.steps + "보 (" + r.steps_category + ")<br>" +
+                    "수면 " + r.sleep_hours + "시간 (" + r.sleep_category + ")" +
                     warningText +
                     "</div>";
             }

@@ -76,6 +76,24 @@ def classify_sugar(blood_sugar):
           return "당뇨 의심"
      
 
+def classify_steps(steps):
+    if steps < 5000:
+         return "부족"
+    elif steps < 10000:
+         return "적정"
+    else:
+         return "우수"
+    
+
+def classify_sleep(sleep_hours):
+    if sleep_hours < 6:
+         return "부족"
+    elif sleep_hours <= 9:
+         return "적정"
+    else:
+         return "과다"
+     
+
 def make_warnings(bmi_category, bp_category, sugar_category):
      warnings = []
      if bmi_category == "비만":
@@ -101,6 +119,8 @@ def create_record(record: RecordIn):
     new_record["bmi_category"] = classify_bmi(bmi)
     new_record["bp_category"] = classify_bp(new_record["systolic"], new_record["diastolic"])
     new_record["sugar_category"] = classify_sugar(new_record["blood_sugar"])
+    new_record["steps_category"] = classify_steps(new_record["steps"])
+    new_record["sleep_category"] = classify_sleep(new_record["sleep_hours"])
     new_record["warnings"] = make_warnings(
          new_record["bmi_category"],
          new_record["bp_category"],
@@ -148,6 +168,8 @@ def update_record(record_id: int, record:RecordIn):
               updated["bmi_category"] = classify_bmi(bmi)
               updated["bp_category"] = classify_bp(updated["systolic"], updated["diastolic"])
               updated["sugar_category"] = classify_sugar(updated["blood_sugar"])
+              updated["steps_category"] = classify_steps(updated["steps"])
+              updated["sleep_category"] = classify_sleep(updated["sleep_hours"])
               updated["warnings"] = make_warnings(
                    updated["bmi_category"],
                    updated["bp_category"],
