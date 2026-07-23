@@ -36,6 +36,8 @@ uvicorn main_db:app --reload --port 8001
 - **다중 목표**: goal_type으로 체중·혈압 등 여러 목표 관리
 - **SQL 집계**: COUNT/AVG/MIN/MAX로 통계 계산
 - **JOIN**: 조회 시 사용자 이름 함께 반환
+- **수치 범위 검증**: Pydantic Field로 몸무게·혈압 등의 현실적 범위를 벗어난 값 차단
+- **보호자-대상자 관계**: 관계 테이블(guardianships)로 연결하고, 등록된 보호자만 대상자 기록 열람 가능
 
 ## 기능 (엔드포인트)
 
@@ -76,6 +78,8 @@ erDiagram
   USERS ||--o{ RECORDS : "기록한다"
   USERS ||--o{ GOALS : "설정한다"
   RECORDS ||--o{ WARNINGS : "발생시킨다"
+  USERS ||--o{ GUARDIANSHIPS : "보호자로 참여"
+  USERS ||--o{ GUARDIANSHIPS : "대상자로 참여"
   USERS {
     int id PK
     string name UK
@@ -105,6 +109,13 @@ erDiagram
     int id PK
     int record_id FK
     string message
+  }
+  GUARDIANSHIPS {
+    int id PK
+    int guardian_id FK
+    int patient_id FK
+    string relation
+    datetime created_at
   }
 ```
 

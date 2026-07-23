@@ -65,11 +65,11 @@
 
 > **인수 조건**: 기록이 파일에 저장됨 / 서버 재시작 후에도 기존 기록 유지
 
-### US-7. 멀리서 지켜보는 딸 (부분 구현)
-딸 이지원 씨는 떨어져 사는 어머니가 걱정이다. 언젠가는 **어머니의 기록과 추이를 직접 확인**하고, 이상 징후가 있으면 알림을 받고 싶다. (현재는 미지원 — 사용자 구분·알림 기능은 향후 계획.)
+### US-7. 멀리서 지켜보는 딸 (대부분 구현)
+딸 이지원 씨는 어머니의 보호자로 등록되어, 어머니의 건강 기록을 직접 조회할 수 있다. 등록되지 않은 사람은 타인의 기록에 접근할 수 없다. 다만 이상 징후 발생 시 **자동 알림**을 받는 기능은 아직 지원하지 않는다.
 
-> **구현됨**: 사용자별 기록·통계·목표 분리 (user 기준)
-> **향후 과제**: 보호자 열람 권한, 이상 수치 알림, 사용자 인증
+> **구현됨**: 사용자별 기록 분리, 보호자-대상자 관계 등록, 권한 기반 기록 열람(403 차단)
+> **향후 과제**: 이상 수치 알림, 사용자 인증/로그인
 
 ---
 
@@ -211,6 +211,8 @@ erDiagram
   USERS ||--o{ RECORDS : "기록한다"
   USERS ||--o{ GOALS : "설정한다"
   RECORDS ||--o{ WARNINGS : "발생시킨다"
+  USERS ||--o{ GUARDIANSHIPS : "보호자로 참여"
+  USERS ||--o{ GUARDIANSHIPS : "대상자로 참여"
   USERS {
     int id PK
     string name UK
@@ -240,6 +242,13 @@ erDiagram
     int id PK
     int record_id FK
     string message
+  }
+  GUARDIANSHIPS {
+    int id PK
+    int guardian_id FK
+    int patient_id FK
+    string relation
+    datetime created_at
   }
 ```
 
