@@ -224,14 +224,16 @@ def get_stats(user: str):
 
 
 @app.get("/weekly-report")
-def weekly_report():
+def weekly_report(user: str):
     today = datetime.now()
     week1_start = today - timedelta(days=7)
     week2_start = today - timedelta(days=14)
 
+    user_records = [r for r in records if r["user"] == user]
+
     def avg_weight(start, end):
         selected = []
-        for r in records:
+        for r in user_records:
             record_date = datetime.strptime(r["date"], "%Y-%m-%d")
             if start <= record_date <end:
                 selected.append(r["weight"])
