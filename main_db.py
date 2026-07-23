@@ -23,7 +23,7 @@ class UserIn(BaseModel):
 
 @app.get("/")
 def read_root():
-    return FileResponse("index.html")
+    return FileResponse("index_db.html")
 
 
 @app.post("/users")
