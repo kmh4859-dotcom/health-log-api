@@ -83,6 +83,7 @@
 | 통계 | 평균 체중·BMI 등 요약 제공 | 추이 파악 |
 | 데이터 영구 저장 | 파일 저장으로 재시작해도 유지 | 기록 유실 방지 |
 | 사용자 구분 | user별로 기록·통계·목표를 분리 관리 | 여러 사용자가 한 시스템 사용 |
+| 데이터베이스 저장 (v2) | SQLite로 정규화된 테이블 구조에 저장 | 확장성·검색 성능·데이터 무결성 |
 
 ### 추가 기능
 - **간단 웹 화면**: 브라우저에서 기록을 입력·조회할 수 있는 HTML 페이지 제공 (`/` 접속). 개발자용 문서(`/docs`) 없이도 일반 사용자가 직접 사용 가능.
@@ -192,9 +193,55 @@
 | 공복혈당 | 100 미만 / 100~125 / 126 이상 | 정상 / 공복혈당장애 / 당뇨 의심 |
 
 ### 저장 형식
+
+**v1 (파일 기반)**
 - 모든 기록은 `data.json` 파일에 JSON 형식으로 저장
-- 파일 구조: `{ "records": [...], "next_id": 숫자 }`
-- 서버 시작 시 파일에서 불러오고, 기록 변경(추가·수정·삭제) 시 파일에 저장
+- 파일 구조: `{ "records": [...], "next_id": 숫자, "goals": {...} }`
+- 서버 시작 시 파일에서 불러오고, 기록 변경 시 파일에 저장
+
+**v2 (SQLite 기반)**
+- `health.db` 파일에 4개 테이블(users, records, goals, warnings)로 정규화하여 저장
+- 사용자와 기록은 `user_id`로, 기록과 경고는 `record_id`로 연결 (1:N)
+- 계산 결과(BMI·분류)는 저장하고, 조회 시 JOIN으로 사용자 이름을 함께 반환
+
+### ERD (v2 데이터베이스 설계)
+
+```mermaid
+erDiagram
+  USERS ||--o{ RECORDS : "기록한다"
+  USERS ||--o{ GOALS : "설정한다"
+  RECORDS ||--o{ WARNINGS : "발생시킨다"
+  USERS {
+    int id PK
+    string name UK
+    int birth_year
+    string gender
+    datetime created_at
+  }
+  RECORDS {
+    int id PK
+    int user_id FK
+    string date
+    float weight
+    float height
+    int systolic
+    int diastolic
+    int blood_sugar
+    float bmi
+    string bmi_category
+  }
+  GOALS {
+    int id PK
+    int user_id FK
+    string goal_type
+    float target_value
+  }
+  WARNINGS {
+    int id PK
+    int record_id FK
+    string message
+  }
+```
 
 ---
 
@@ -224,7 +271,7 @@
 
 ### 확장성
 - 기능이 함수 단위로 분리되어 새 분류·통계 항목 추가가 용이하다.
-- 데이터 저장을 파일에서 데이터베이스로 교체할 수 있는 구조를 지향한다. (향후)
+- 데이터 저장을 파일(v1)에서 SQLite 데이터베이스(v2)로 전환 완료. ERD 설계를 기반으로 사용자·기록·목표·경고 테이블을 정규화하여 구성했다.
 
 ---
 
@@ -251,10 +298,10 @@
 - 실제 의학적 진단 (분류 기준은 학습용으로 단순화한 값이며 진단이 아님)
 
 ## 12. 향후 계획
-- 사용자 인증/로그인 (현재는 이름 기반 구분만 지원)
+- 사용자 인증/로그인
 - 보호자 열람 권한 및 이상 수치 알림
 - 모바일 앱 지원
-- 목표 관리, 주간 리포트 등 확장 기능
+- PostgreSQL 등 서버형 DB로 확장 (다중 사용자 동시 접속 대응)
 
 ---
 

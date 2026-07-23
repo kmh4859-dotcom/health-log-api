@@ -6,6 +6,37 @@
 
 > 이 프로젝트의 건강 분류 기준은 학습용으로 단순화한 값이며, 실제 의학적 진단이 아닙니다.
 
+## 두 가지 버전
+
+이 저장소에는 두 버전이 있습니다.
+
+| 버전 | 저장 방식 | 실행 파일 | 설명 |
+|------|----------|----------|------|
+| v1 (과제 제출본) | JSON 파일 | `main.py` | 과제 요구사항 구현 |
+| v2 (확장) | SQLite DB | `main_db.py` | ERD 설계 기반 DB 전환 |
+
+### v1 실행 (파일 기반)
+```
+pip install -r requirements.txt
+uvicorn main:app --reload
+```
+접속: http://127.0.0.1:8000/docs
+
+### v2 실행 (SQLite 기반)
+```
+pip install -r requirements.txt
+python init_db.py                        # 최초 1회: DB 및 테이블 생성
+uvicorn main_db:app --reload --port 8001
+```
+접속: http://127.0.0.1:8001/docs
+
+### v2에서 추가된 것
+- **사용자 테이블 분리**: 이름 대신 user_id로 연결 (1:N 관계)
+- **경고 별도 테이블**: 기록당 여러 경고를 정규화하여 저장
+- **다중 목표**: goal_type으로 체중·혈압 등 여러 목표 관리
+- **SQL 집계**: COUNT/AVG/MIN/MAX로 통계 계산
+- **JOIN**: 조회 시 사용자 이름 함께 반환
+
 ## 기능 (엔드포인트)
 
 | 메서드 | 경로 | 설명 |
@@ -38,6 +69,49 @@
 - **혈압**: 정상 / 주의 / 고혈압
 - **공복혈당**: 정상 / 공복혈당장애 / 당뇨 의심
 
-## 실행 방법
+## ERD (v2 데이터베이스 설계)
 
-### 로컬 실행
+```mermaid
+erDiagram
+  USERS ||--o{ RECORDS : "기록한다"
+  USERS ||--o{ GOALS : "설정한다"
+  RECORDS ||--o{ WARNINGS : "발생시킨다"
+  USERS {
+    int id PK
+    string name UK
+    int birth_year
+    string gender
+    datetime created_at
+  }
+  RECORDS {
+    int id PK
+    int user_id FK
+    string date
+    float weight
+    float height
+    int systolic
+    int diastolic
+    int blood_sugar
+    float bmi
+    string bmi_category
+  }
+  GOALS {
+    int id PK
+    int user_id FK
+    string goal_type
+    float target_value
+  }
+  WARNINGS {
+    int id PK
+    int record_id FK
+    string message
+  }
+```
+
+### Docker 실행
+docker build -t health-log-api .
+docker run -p 8000:8000 health-log-api
+
+접속: http://127.0.0.1:8000/docs
+
+> Docker 실행은 v1(파일 기반)을 대상으로 합니다.
