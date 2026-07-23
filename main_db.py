@@ -2,6 +2,7 @@ import sqlite3
 from fastapi import FastAPI, HTTPException
 from fastapi. responses import FileResponse
 from pydantic import BaseModel
+from datetime import datetime, timedelta
 
 app = FastAPI(title="마이 헬스 로그 API (DB)", version="2.0")
 
@@ -406,3 +407,40 @@ def get_goals(user_id: int):
                 result["remaining"] = round(current - g["target_value"], 1)
 
     return result
+
+
+@app.get("/weekly-report")
+def weekly_report(user_id: int):
+    today = datetime.now()
+    week1_start = (today - timedelta(days=7)).strftime("%Y-%m-%d")
+    week2_start = (today - timedelta(days=14)).strftime("%Y-%m-%d")
+    today_str = today.strftime("%Y-%m-%d")
+
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT ROUND(AVG(weight), 1) AS avg_weight, COUNT(*) AS count
+        FROM records
+        WHERE user_id = ? AND date >= ? AND date <= ?
+    """, (user_id, week1_start, today_str))
+    this_week = cur.fetchone()
+
+    cur.execute("""
+        SELECT ROUND(AVG(weight), 1) AS avg_weight, COUNT(*) AS count
+        FROM records
+        WHERE user_id = ? AND date >= ? AND date < ?
+    """, (user_id, week2_start, week1_start))
+    last_week = cur.fetchone()
+
+    conn.close()
+
+    change = None
+    if this_week["avg_weight"] is not None and last_week["avg_weight"] is not None:
+        change = round(this_week["avg_weight"] - last_week["avg_weight"], 1)
+
+    return {
+        "this_week": {"avg_weight": this_week["avg_weight"], "count": this_week["count"]},
+        "last_week": {"avg_weight": last_week["avg_weight"], "count": last_week["count"]},
+        "change": change
+    }
