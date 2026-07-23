@@ -15,6 +15,11 @@
 <body>
     <h1>마이 헬스 로그</h1>
 
+    <div style="margin-bottom: 20px;">
+        <label>사용자: </label>
+        <input id="user" placeholder="이름 (예: 이순자)">
+    </div>
+        
     <h2>기록 입력</h2>
     <input id="date" placeholder="날짜 (예: 2026-07-21)">
     <input id="weight" type="number" placeholder="몸무게 (kg)">
@@ -39,6 +44,7 @@
     <script>
         async function addRecord() {
             const data = {
+                user: document.getElementById("user").value,
                 date: document.getElementById("date").value,
                 weight: parseFloat(document.getElementById("weight").value),
                 height: parseFloat(document.getElementById("height").value),
@@ -57,7 +63,8 @@
         }
 
         async function loadRecords() {
-            const res = await fetch("/records");
+            const user = document.getElementById("user").value;            
+            const res = await fetch("/records?user=" + user);
             const result = await res.json();
             let html = "";
             for (const r of result.records) {
@@ -80,6 +87,7 @@
 
         async function setGoal() {
             const data = {
+                user: document.getElementById("user").value,
                 target_weight: parseFloat(document.getElementById("target_weight").value)
             };
             await fetch("/goal", {
@@ -92,7 +100,8 @@
 
 
         async function loadGoal() {
-            const res = await fetch("/goal");
+            const user = document.getElementById("user").value;
+            const res = await fetch("/goal?user=" + user);
             const result = await res.json();
             let html = "";
             if (result.message) {

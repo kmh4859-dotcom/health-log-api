@@ -11,25 +11,26 @@ app = FastAPI(title="마이 헬스 로그 API", version="1.0")
 DATA_FILE = "data.json"
 records = []
 next_id = 1
-goal = {"target_weight": None}
+goals = {}
 
 
 def save_data():
     with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json. dump({"records": records, "next_id": next_id, "goal": goal}, f, ensure_ascii=False, indent=2)
+        json.dump({"records": records, "next_id": next_id, "goals": goals}, f, ensure_ascii=False, indent=2)
 
 
 def load_data():
-    global records, next_id, goal
+    global records, next_id, goals
     if os.path.exists(DATA_FILE):
         with open(DATA_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
             records = data["records"]
             next_id = data["next_id"]
-            goal = data.get("goal", {"target_weight": None})
+            goals = data.get("goals", {})
 
 
 class RecordIn(BaseModel):
+    user: str
     date: str
     weight: float
     height: float
@@ -42,6 +43,7 @@ class RecordIn(BaseModel):
 
 
 class GoalIn(BaseModel):
+    user: str
     target_weight: float
     
 
@@ -139,17 +141,18 @@ def create_record(record: RecordIn):
     return new_record
 
 @app.get("/records")
-def get_records():
-	return {
-		"count" : len(records),
-		"records" : records
+def get_records(user: str):
+    filtered = [r for r in records if r["user"] == user]
+    return {
+		"count" : len(filtered),
+		"records" : filtered
 	}
 
 
 @app.get("/records/{record_id}")
-def get_record(record_id: int):
+def get_record(record_id: int, user: str):
      for record in records:
-          if record["id"] == record_id:
+          if record["id"] == record_id and record["user"] == user:
                return record
           raise HTTPException(status_code=404, detail="기록을 찾을 수 없습니다")
      
@@ -189,10 +192,10 @@ def update_record(record_id: int, record:RecordIn):
 
 
 @app.get("/search")
-def search_records(start: str, end: str):
+def search_records(user: str, start: str, end: str):
     result = []
     for record in records:
-         if start <= record["date"] <= end:
+         if record["user"] == user and start <= record["date"] <= end:
               result.append(record)
     return {
          "count": len(result),
@@ -201,17 +204,18 @@ def search_records(start: str, end: str):
 
 
 @app.get("/stats")
-def get_stats():
-    if len(records) == 0:
+def get_stats(user: str):
+    user_records = [r for r in records if r["user"] == user]
+    if len(user_records) == 0:
         return {"message": "기록이 없습니다"}
                        
     total_weight = 0
     total_bmi = 0
-    for record in records:
+    for record in user_records:
         total_weight += record["weight"]
         total_bmi += record["bmi"]
 
-    count = len(records)
+    count = len(user_records)
     return {
          "count": count,
          "avg_weight": round(total_weight / count, 1),
@@ -251,24 +255,27 @@ def weekly_report():
 
 @app.post("/goal")
 def set_goal(goal_data: GoalIn):
-    global goal
-    goal["target_weight"] = goal_data.target_weight
+    global goals
+    goals[goal_data.user] = goal_data.target_weight
     save_data()
-    return goal
+    return {"user": goal_data.user, "target_weight": goal_data.target_weight}
 
 
 @app.get("/goal")
-def get_goal():
-    if goal["target_weight"] is None:
-         return {"message": "기록이 설정되지 않았습니다."}
-    if len(records) == 0:
+def get_goal(user: str):
+    if user not in goals:
+         return {"message": "목표가 설정되지 않았습니다."}
+
+    user_records = [r for r in records if r["user"] == user]
+    if len(user_records) == 0:
          return {"message": "기록이 없습니다"}
     
-    latest_weight = records[-1]["weight"]
-    target = goal["target_weight"]
+    latest_weight = user_records[-1]["weight"]
+    target = goals[user]
     remaining = round(latest_weight - target, 1)
 
     return {
+         "user": user,
          "target_weight": target,
          "current_weight": latest_weight,
          "remaining": remaining
