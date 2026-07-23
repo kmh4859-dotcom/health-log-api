@@ -1,7 +1,7 @@
 import sqlite3
 from fastapi import FastAPI, HTTPException
 from fastapi. responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime, timedelta
 
 app = FastAPI(title="마이 헬스 로그 API (DB)", version="2.0")
@@ -123,13 +123,13 @@ def make_warnings(bmi_cat, bp_cat, sugar_cat):
 class RecordIn(BaseModel):
     user_id: int
     date: str
-    weight: float
-    height: float
-    systolic: int
-    diastolic: int
-    blood_sugar: int
-    steps: int = 0
-    sleep_hours: float = 0.0
+    weight: float = Field(..., ge=20, le=300, description="몸무게(kg)")
+    height: float = Field(..., ge=50, le=250, description="키(cm)")
+    systolic: int = Field(..., ge=50, le=250, description="수축기 혈압")
+    diastolic: int = Field(..., ge=30, le=150, description="이완기 혈압")
+    blood_sugar: int = Field(..., ge=20, le=600, description="공복 혈당")
+    steps: int = Field(0, ge=0, le=100000, description="걸음 수")
+    sleep_hours: float = Field(0.0, ge=0, le=24, description="수면 시간")
     memo: str = ""
 
 
@@ -444,3 +444,90 @@ def weekly_report(user_id: int):
         "last_week": {"avg_weight": last_week["avg_weight"], "count": last_week["count"]},
         "change": change
     }
+
+
+class GuardianshipIn(BaseModel):
+    guardian_id: int
+    patient_id: int
+    relation: str = ""
+
+
+@app.post("/guardianships")
+def create_guardianship(g: GuardianshipIn):
+    if g.guardian_id == g.patient_id:
+        raise HTTPException(status_code=400, detail="자기 자신을 보호자로 등록할 수 없습니다")
+
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.execute("SELECT id FROM users WHERE id IN (?, ?)", (g.guardian_id, g.patient_id))
+    if len(cur.fetchall()) != 2:
+        conn.close()
+        raise HTTPException(status_code=404, detail="존재하지 않는 사용자가 포함되어 있습니다")
+
+    try:
+        cur.execute(
+            "INSERT INTO guardianships (guardian_id, patient_id, relation) VALUES (?, ?, ?)",
+            (g.guardian_id, g.patient_id, g.relation)
+        )
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.close()
+        raise HTTPException(status_code=400, detail="이미 등록된 관계입니다")
+
+    new_id = cur.lastrowid
+    conn.close()
+    return {"id": new_id, "guardian_id": g.guardian_id,
+            "patient_id": g.patient_id, "relation": g.relation}
+
+
+@app.get("/guardianships")
+def get_my_patients(guardian_id: int):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT guardianships.id, guardianships.patient_id,
+               guardianships.relation, users.name AS patient_name
+        FROM guardianships
+        JOIN users ON guardianships.patient_id = users.id
+        WHERE guardianships.guardian_id = ?
+    """, (guardian_id,))
+    rows = cur.fetchall()
+    conn.close()
+    return {"count": len(rows), "patients": [dict(r) for r in rows]}
+
+
+def is_guardian_of(cur, guardian_id, patient_id):
+    cur.execute(
+        "SELECT id FROM guardianships WHERE guardian_id = ? AND patient_id = ?",
+        (guardian_id, patient_id)
+    )
+    return cur.fetchone() is not None
+
+
+@app.get("/guardian/records")
+def get_patient_records(guardian_id: int, patient_id: int):
+    conn = get_conn()
+    cur = conn.cursor()
+
+    if not is_guardian_of(cur, guardian_id, patient_id):
+        conn.close()
+        raise HTTPException(status_code=403, detail="이 대상자의 기록을 볼 권한이 없습니다")
+
+    cur.execute("""
+        SELECT records.*, users.name AS user_name
+        FROM records
+        JOIN users ON records.user_id = users.id
+        WHERE records.user_id = ?
+        ORDER BY records.date DESC
+    """, (patient_id,))
+    rows = cur.fetchall()
+
+    result = []
+    for row in rows:
+        record = dict(row)
+        record["warnings"] = get_warnings(cur, row["id"])
+        result.append(record)
+
+    conn.close()
+    return {"count": len(result), "records": result}

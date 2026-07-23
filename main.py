@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import json
 import os
 from fastapi.responses import FileResponse
@@ -32,13 +32,13 @@ def load_data():
 class RecordIn(BaseModel):
     user: str
     date: str
-    weight: float
-    height: float
-    systolic: int
-    diastolic: int
-    blood_sugar: int
-    steps: int = 0
-    sleep_hours: float = 0.0
+    weight: float = Field(..., ge=20, le=300, description="몸무게(kg)")
+    height: float = Field(..., ge=50, le=250, description="키(cm)")
+    systolic: int = Field(..., ge=50, le=250, description="수축기 혈압")
+    diastolic: int = Field(..., ge=30, le=150, description="이완기 혈압")
+    blood_sugar: int = Field(..., ge=20, le=600, description="공복 혈당")
+    steps: int = Field(0, ge=0, le=100000, description="걸음 수")
+    sleep_hours: float = Field(0.0, ge=0, le=24, description="수면 시간")
     memo: str = ""
 
 

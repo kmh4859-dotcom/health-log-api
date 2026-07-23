@@ -55,6 +55,21 @@ CREATE TABLE IF NOT EXISTS warnings (
 )
 """)
 
+
+cur.execute("""
+CREATE TABLE IF NOT EXISTS guardianships (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    guardian_id INTEGER NOT NULL,
+    patient_id INTEGER NOT NULL,
+    relation TEXT DEFAULT '',
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (guardian_id, patient_id),
+    FOREIGN KEY (guardian_id) REFERENCES users(id),
+    FOREIGN KEY (patient_id) REFERENCES users(id)
+)
+""")
+
+
 conn.commit()
 conn.close()
 print("데이터베이스 생성 완료!")
