@@ -2,186 +2,242 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>마이 헬스 로그 (DB)</title>
+    <title>마이 헬스 로그</title>
     <style>
-        body { font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 0 20px; }
+        body { font-family: sans-serif; max-width: 640px; margin: 40px auto; padding: 0 20px; }
         h1 { color: #2d6cdf; }
-        input, select { width: 100%; padding: 8px; margin: 5px 0; box-sizing: border-box; }
-        button { background: #2d6cdf; color: white; border: none; padding: 10px 20px; cursor: pointer; border-radius: 4px; margin-right: 6px; }
+        h2 { font-size: 18px; margin-top: 28px; }
+        input, select { width: 100%; padding: 8px; margin: 4px 0; box-sizing: border-box; }
+        button { background: #2d6cdf; color: white; border: none; padding: 9px 18px; cursor: pointer; border-radius: 4px; margin-right: 6px; }
+        button.sub { background: #777; }
         .record { border: 1px solid #ddd; padding: 12px; margin: 10px 0; border-radius: 6px; }
         .warning { color: #d33; font-weight: bold; }
-        .section { margin-bottom: 28px; }
+        .box { border: 1px solid #e0e0e0; border-radius: 8px; padding: 16px; margin-bottom: 20px; }
+        .hidden { display: none; }
+        #whoami { background: #eef3fc; padding: 10px; border-radius: 6px; }
     </style>
 </head>
 <body>
-    <h1>마이 헬스 로그 (DB)</h1>
+    <h1>마이 헬스 로그</h1>
 
-    <div class="section">
-        <h2>사용자 등록</h2>
-        <input id="new_name" placeholder="이름">
-        <input id="new_birth" type="number" placeholder="출생연도 (예: 1958)">
-        <input id="new_gender" placeholder="성별 (남/여)">
-        <button onclick="createUser()">등록</button>
+    <!-- 로그인 전 -->
+    <div id="auth-area">
+        <div class="box">
+            <h2>로그인</h2>
+            <input id="login_name" placeholder="이름">
+            <input id="login_pw" type="password" placeholder="비밀번호">
+            <button onclick="login()">로그인</button>
+        </div>
+
+        <div class="box">
+            <h2>회원가입</h2>
+            <input id="signup_name" placeholder="이름">
+            <input id="signup_pw" type="password" placeholder="비밀번호 (4자 이상)">
+            <input id="signup_birth" type="number" placeholder="출생연도 (예: 1958)">
+            <input id="signup_gender" placeholder="성별 (남/여)">
+            <button onclick="signup()">가입</button>
+        </div>
     </div>
 
-    <div class="section">
-        <h2>사용자 선택</h2>
-        <select id="user_select" onchange="refreshAll()"></select>
+    <!-- 로그인 후 -->
+    <div id="main-area" class="hidden">
+        <div id="whoami"></div>
+        <p><button class="sub" onclick="logout()">로그아웃</button></p>
+
+        <div class="box">
+            <h2>기록 입력</h2>
+            <input id="date" placeholder="날짜 (예: 2026-07-24)">
+            <input id="weight" type="number" placeholder="몸무게 (kg)">
+            <input id="height" type="number" placeholder="키 (cm)">
+            <input id="systolic" type="number" placeholder="수축기 혈압">
+            <input id="diastolic" type="number" placeholder="이완기 혈압">
+            <input id="blood_sugar" type="number" placeholder="공복 혈당">
+            <input id="steps" type="number" placeholder="걸음 수">
+            <input id="sleep_hours" type="number" placeholder="수면 시간">
+            <button onclick="addRecord()">저장</button>
+        </div>
+
+        <div class="box">
+            <h2>목표 관리</h2>
+            <input id="target_weight" type="number" placeholder="목표 체중 (kg)">
+            <button onclick="setGoal()">목표 설정</button>
+            <button class="sub" onclick="loadGoal()">달성률 확인</button>
+            <div id="goal"></div>
+        </div>
+
+        <div class="box">
+            <h2>통계</h2>
+            <button onclick="loadStats()">통계 보기</button>
+            <div id="stats"></div>
+        </div>
+
+        <div class="box">
+            <h2>내 기록</h2>
+            <button onclick="loadRecords()">새로고침</button>
+            <div id="records"></div>
+        </div>
     </div>
 
-    <div class="section">
-        <h2>기록 입력</h2>
-        <input id="date" placeholder="날짜 (예: 2026-07-22)">
-        <input id="weight" type="number" placeholder="몸무게 (kg)">
-        <input id="height" type="number" placeholder="키 (cm)">
-        <input id="systolic" type="number" placeholder="수축기 혈압">
-        <input id="diastolic" type="number" placeholder="이완기 혈압">
-        <input id="blood_sugar" type="number" placeholder="공복 혈당">
-        <input id="steps" type="number" placeholder="걸음 수">
-        <input id="sleep_hours" type="number" placeholder="수면 시간">
-        <button onclick="addRecord()">저장</button>
-    </div>
+<script>
+let token = localStorage.getItem("token") || "";
+let me = null;
 
-    <div class="section">
-        <h2>목표 관리</h2>
-        <input id="target_weight" type="number" placeholder="목표 체중 (kg)">
-        <button onclick="setGoal()">목표 설정</button>
-        <div id="goal"></div>
-    </div>
+function authHeaders() {
+    return { "Content-Type": "application/json", "Authorization": "Bearer " + token };
+}
 
-    <div class="section">
-        <h2>기록 목록</h2>
-        <button onclick="loadRecords()">새로고침</button>
-        <div id="records"></div>
-    </div>
+async function signup() {
+    const data = {
+        name: document.getElementById("signup_name").value,
+        password: document.getElementById("signup_pw").value,
+        birth_year: parseInt(document.getElementById("signup_birth").value) || 0,
+        gender: document.getElementById("signup_gender").value
+    };
+    const res = await fetch("/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data)
+    });
+    if (!res.ok) {
+        const err = await res.json();
+        alert("가입 실패: " + JSON.stringify(err.detail));
+        return;
+    }
+    alert("가입되었습니다. 로그인해 주세요.");
+}
 
-    <script>
-        async function loadUsers() {
-            const res = await fetch("/users");
-            const result = await res.json();
-            const select = document.getElementById("user_select");
-            select.innerHTML = "";
-            for (const u of result.users) {
-                const opt = document.createElement("option");
-                opt.value = u.id;
-                opt.textContent = u.name + " (id: " + u.id + ")";
-                select.appendChild(opt);
-            }
+async function login() {
+    const body = new URLSearchParams();
+    body.append("username", document.getElementById("login_name").value);
+    body.append("password", document.getElementById("login_pw").value);
+
+    const res = await fetch("/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: body
+    });
+    if (!res.ok) {
+        alert("로그인 실패: 이름 또는 비밀번호를 확인하세요");
+        return;
+    }
+    const data = await res.json();
+    token = data.access_token;
+    localStorage.setItem("token", token);
+    await afterLogin();
+}
+
+function logout() {
+    token = "";
+    me = null;
+    localStorage.removeItem("token");
+    document.getElementById("auth-area").classList.remove("hidden");
+    document.getElementById("main-area").classList.add("hidden");
+}
+
+async function afterLogin() {
+    const res = await fetch("/me", { headers: authHeaders() });
+    if (!res.ok) { logout(); return; }
+    me = await res.json();
+    document.getElementById("whoami").innerHTML =
+        "<b>" + me.name + "</b> 님 (id: " + me.id + ", 권한: " + me.role + ")";
+    document.getElementById("auth-area").classList.add("hidden");
+    document.getElementById("main-area").classList.remove("hidden");
+    loadRecords();
+    loadGoal();
+}
+
+async function addRecord() {
+    const data = {
+        user_id: me.id,
+        date: document.getElementById("date").value,
+        weight: parseFloat(document.getElementById("weight").value),
+        height: parseFloat(document.getElementById("height").value),
+        systolic: parseInt(document.getElementById("systolic").value),
+        diastolic: parseInt(document.getElementById("diastolic").value),
+        blood_sugar: parseInt(document.getElementById("blood_sugar").value),
+        steps: parseInt(document.getElementById("steps").value) || 0,
+        sleep_hours: parseFloat(document.getElementById("sleep_hours").value) || 0
+    };
+    const res = await fetch("/records", {
+        method: "POST", headers: authHeaders(), body: JSON.stringify(data)
+    });
+    if (!res.ok) {
+        const err = await res.json();
+        alert("저장 실패: " + JSON.stringify(err.detail));
+        return;
+    }
+    loadRecords();
+}
+
+async function loadRecords() {
+    const res = await fetch("/records", { headers: authHeaders() });
+    if (!res.ok) { alert("조회 실패"); return; }
+    const result = await res.json();
+    let html = "";
+    for (const r of result.records) {
+        let warningText = "";
+        if (r.warnings && r.warnings.length > 0) {
+            warningText = "<p class='warning'>⚠️ " + r.warnings.join(" / ") + "</p>";
         }
+        html += "<div class='record'>" +
+            "<b>" + r.date + "</b> (id: " + r.id + ")<br>" +
+            "몸무게 " + r.weight + "kg, 키 " + r.height + "cm<br>" +
+            "BMI " + r.bmi + " (" + r.bmi_category + "), 혈압 " + r.bp_category + ", 혈당 " + r.sugar_category + "<br>" +
+            "걸음 " + r.steps + "보 (" + r.steps_category + "), 수면 " + r.sleep_hours + "시간 (" + r.sleep_category + ")" +
+            warningText +
+            "</div>";
+    }
+    if (html === "") html = "<p>기록이 없습니다.</p>";
+    document.getElementById("records").innerHTML = html;
+}
 
-        function getUserId() {
-            return parseInt(document.getElementById("user_select").value);
+async function setGoal() {
+    const data = {
+        user_id: me.id,
+        goal_type: "weight",
+        target_value: parseFloat(document.getElementById("target_weight").value)
+    };
+    const res = await fetch("/goals", {
+        method: "POST", headers: authHeaders(), body: JSON.stringify(data)
+    });
+    if (!res.ok) { alert("목표 설정 실패"); return; }
+    loadGoal();
+}
+
+async function loadGoal() {
+    const res = await fetch("/goals", { headers: authHeaders() });
+    if (!res.ok) return;
+    const result = await res.json();
+    let html = "";
+    if (result.message) {
+        html = "<p>" + result.message + "</p>";
+    } else {
+        html = "<div class='record'>";
+        for (const g of result.goals) {
+            html += g.goal_type + " 목표: " + g.target_value + "<br>";
         }
+        if (result.current_weight !== undefined) html += "현재 체중: " + result.current_weight + "kg<br>";
+        if (result.remaining !== undefined) html += "<b>남은 양: " + result.remaining + "kg</b>";
+        html += "</div>";
+    }
+    document.getElementById("goal").innerHTML = html;
+}
 
-        async function createUser() {
-            const data = {
-                name: document.getElementById("new_name").value,
-                birth_year: parseInt(document.getElementById("new_birth").value) || 0,
-                gender: document.getElementById("new_gender").value
-            };
-            const res = await fetch("/users", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(data)
-            });
-            if (!res.ok) {
-                const err = await res.json();
-                alert("등록 실패: " + err.detail);
-                return;
-            }
-            await loadUsers();
-            alert("등록되었습니다");
-        }
+async function loadStats() {
+    const res = await fetch("/stats", { headers: authHeaders() });
+    if (!res.ok) return;
+    const r = await res.json();
+    let html = "";
+    if (r.message) {
+        html = "<p>" + r.message + "</p>";
+    } else {
+        html = "<div class='record'>기록 " + r.count + "건<br>평균 체중 " + r.avg_weight +
+               "kg, 평균 BMI " + r.avg_bmi + "<br>최저 " + r.min_weight + "kg / 최고 " + r.max_weight + "kg</div>";
+    }
+    document.getElementById("stats").innerHTML = html;
+}
 
-        async function addRecord() {
-            const data = {
-                user_id: getUserId(),
-                date: document.getElementById("date").value,
-                weight: parseFloat(document.getElementById("weight").value),
-                height: parseFloat(document.getElementById("height").value),
-                systolic: parseInt(document.getElementById("systolic").value),
-                diastolic: parseInt(document.getElementById("diastolic").value),
-                blood_sugar: parseInt(document.getElementById("blood_sugar").value),
-                steps: parseInt(document.getElementById("steps").value) || 0,
-                sleep_hours: parseFloat(document.getElementById("sleep_hours").value) || 0
-            };
-            const res = await fetch("/records", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(data)
-            });
-            if (!res.ok) {
-                alert("저장 실패: 모든 칸을 채워주세요");
-                return;
-            }
-            loadRecords();
-        }
-
-        async function loadRecords() {
-            const res = await fetch("/records?user_id=" + getUserId());
-            const result = await res.json();
-            let html = "";
-            for (const r of result.records) {
-                let warningText = "";
-                if (r.warnings.length > 0) {
-                    warningText = "<p class='warning'>⚠️ " + r.warnings.join(" / ") + "</p>";
-                }
-                html += "<div class='record'>" +
-                    "<b>" + r.date + "</b> (id: " + r.id + ", " + r.user_name + ")<br>" +
-                    "몸무게 " + r.weight + "kg, 키 " + r.height + "cm<br>" +
-                    "BMI " + r.bmi + " (" + r.bmi_category + "), 혈압 " + r.bp_category + ", 혈당 " + r.sugar_category + "<br>" +
-                    "걸음 " + r.steps + "보 (" + r.steps_category + "), 수면 " + r.sleep_hours + "시간 (" + r.sleep_category + ")" +
-                    warningText +
-                    "</div>";
-            }
-            document.getElementById("records").innerHTML = html;
-        }
-
-        async function setGoal() {
-            const data = {
-                user_id: getUserId(),
-                goal_type: "weight",
-                target_value: parseFloat(document.getElementById("target_weight").value)
-            };
-            await fetch("/goals", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(data)
-            });
-            loadGoal();
-        }
-
-        async function loadGoal() {
-            const res = await fetch("/goals?user_id=" + getUserId());
-            const result = await res.json();
-            let html = "";
-            if (result.message) {
-                html = "<p>" + result.message + "</p>";
-            } else {
-                html = "<div class='record'>";
-                for (const g of result.goals) {
-                    html += g.goal_type + " 목표: " + g.target_value + "<br>";
-                }
-                if (result.current_weight !== undefined) {
-                    html += "현재 체중: " + result.current_weight + "kg<br>";
-                }
-                if (result.remaining !== undefined) {
-                    html += "<b>남은 양: " + result.remaining + "kg</b>";
-                }
-                html += "</div>";
-            }
-            document.getElementById("goal").innerHTML = html;
-        }
-
-        async function refreshAll() {
-            await loadRecords();
-            await loadGoal();
-        }
-
-        (async function init() {
-            await loadUsers();
-            await refreshAll();
-        })();
-    </script>
+if (token) { afterLogin(); }
+</script>
 </body>
 </html>
