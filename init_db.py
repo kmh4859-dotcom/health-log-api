@@ -6,6 +6,8 @@ cur.execute("""
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL DEFAULT '',
+    role TEXT NOT NULL DEFAULT 'user',
     birth_year INTEGER,
     gender TEXT,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP

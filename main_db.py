@@ -3,6 +3,10 @@ from fastapi import FastAPI, HTTPException
 from fastapi. responses import FileResponse
 from pydantic import BaseModel, Field
 from datetime import datetime, timedelta
+from passlib.context import CryptContext
+from jose import jwt, JWTError
+from fastapi import Depends
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 
 app = FastAPI(title="마이 헬스 로그 API (DB)", version="2.0")
 
@@ -15,6 +19,52 @@ def get_conn():
     return conn
 
 
+SECRET_KEY = "change-this-to-a-long-random-string"
+ALGORITHM = "HS256"
+TOKEN_EXPIRE_MINUTES = 180
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+
+
+def hash_password(password):
+    return pwd_context.hash(password)
+
+
+def verify_password(plain, hashed):
+    return pwd_context.verify(plain, hashed)
+
+
+def create_token(user_id, name, role):
+    expire = datetime.utcnow() + timedelta(minutes=TOKEN_EXPIRE_MINUTES)
+    payload = {"sub": str(user_id), "name": name, "role": role, "exp": expire}
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def get_current_user(token: str = Depends(oauth2_scheme)):
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return {"id": int(payload["sub"]), "name": payload["name"], "role": payload["role"]}
+    except JWTError:
+        raise HTTPException(status_code=401, detail="인증에 실패했습니다")
+
+
+def require_admin(current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="관리자만 접근할 수 있습니다")
+    return current_user
+
+
+def get_record_or_403(cur, record_id, current_user):
+    cur.execute("SELECT * FROM records WHERE id = ?", (record_id,))
+    row = cur.fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="기록을 찾을 수 없습니다")
+    if row["user_id"] != current_user["id"] and current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="이 기록에 접근할 권한이 없습니다")
+    return row
+
+    
 class UserIn(BaseModel):
     name: str
     birth_year: int = 0
@@ -26,29 +76,11 @@ def read_root():
     return FileResponse("index_db.html")
 
 
-@app.post("/users")
-def create_user(user: UserIn):
-    conn = get_conn()
-    cur = conn.cursor()
-    try:
-        cur.execute(
-            "INSERT INTO users (name, birth_year, gender) VALUES (?, ?, ?)",
-            (user.name, user.birth_year, user.gender)
-        )
-        conn.commit()
-        new_id = cur.lastrowid
-    except sqlite3.IntegrityError:
-        conn.close()
-        raise HTTPException(status_code=400, detail="이미 존재하는 사용자입니다")
-    conn.close()
-    return {"id": new_id, "name": user.name}
-
-
 @app.get("/users")
-def get_users():
+def get_users(admin: dict = Depends(require_admin)):
     conn = get_conn()
     cur = conn.cursor()
-    cur.execute("SELECT * FROM users")
+    cur.execute("SELECT id, name, role, birth_year, gender, created_at FROM users")
     rows = cur.fetchall()
     conn.close()
     return {
@@ -134,7 +166,8 @@ class RecordIn(BaseModel):
 
 
 @app.post("/records")
-def create_record(record: RecordIn):
+def create_record(record: RecordIn, current_user: dict = Depends(get_current_user)):
+    record.user_id = current_user["id"]
     bmi = calculate_bmi(record.weight, record.height)
     bmi_cat = classify_bmi(bmi)
     bp_cat = classify_bp(record.systolic, record.diastolic)
@@ -194,7 +227,7 @@ def get_warnings(cur, record_id):
 
 
 @app.get("/records")
-def get_records(user_id: int):
+def get_records(current_user: dict = Depends(get_current_user)):
     conn = get_conn()
     cur = conn.cursor()
 
@@ -204,7 +237,7 @@ def get_records(user_id: int):
         JOIN users ON records.user_id = users.id
         WHERE records.user_id = ?
         ORDER BY records.date DESC        
-    """, (user_id,))
+    """, (current_user["id"],))
     rows = cur.fetchall()
 
     result = []
@@ -218,9 +251,11 @@ def get_records(user_id: int):
 
 
 @app.get("/records/{record_id}")
-def get_record(record_id: int):
+def get_record(record_id: int, current_user: dict = Depends(get_current_user)):
     conn = get_conn()
     cur = conn.cursor()
+
+    get_record_or_403(cur, record_id, current_user)
 
     cur.execute("""
         SELECT records.*, users.name AS user_name
@@ -230,19 +265,14 @@ def get_record(record_id: int):
     """, (record_id,))
     row = cur.fetchone()
 
-    if row is None:
-        conn.close()
-        raise HTTPException(status_code=404, detail="기록을 찾을 수 없습니다")
-
     record = dict(row)
     record["warnings"] = get_warnings(cur, record_id)
 
     conn.close()
     return record
 
-
 @app.put("/records/{record_id}")
-def update_record(record_id: int, record: RecordIn):
+def update_record(record_id: int, record: RecordIn, current_user: dict = Depends(get_current_user)):
     bmi = calculate_bmi(record.weight, record.height)
     bmi_cat = classify_bmi(bmi)
     bp_cat = classify_bp(record.systolic, record.diastolic)
@@ -254,10 +284,8 @@ def update_record(record_id: int, record: RecordIn):
     conn = get_conn()
     cur = conn.cursor()
 
-    cur.execute("SELECT id FROM records WHERE id = ?", (record_id,))
-    if cur.fetchone() is None:
-        conn.close()
-        raise HTTPException(status_code=404, detail="기록을 찾을 수 없습니다")
+    get_record_or_403(cur, record_id, current_user)
+    record.user_id = current_user["id"]
 
     cur.execute("""
         UPDATE records SET
@@ -285,14 +313,11 @@ def update_record(record_id: int, record: RecordIn):
 
 
 @app.delete("/records/{record_id}")
-def delete_record(record_id: int):
+def delete_record(record_id: int, current_user: dict = Depends(get_current_user)):
     conn = get_conn()
     cur = conn.cursor()
 
-    cur.execute("SELECT id FROM records WHERE id = ?", (record_id,))
-    if cur.fetchone() is None:
-        conn.close()
-        raise HTTPException(status_code=404, detail="기록을 찾을 수 없습니다")
+    get_record_or_403(cur, record_id, current_user)
 
     cur.execute("DELETE FROM warnings WHERE record_id = ?", (record_id,))
     cur.execute("DELETE FROM records WHERE id = ?", (record_id,))
@@ -303,7 +328,7 @@ def delete_record(record_id: int):
 
 
 @app.get("/search")
-def search_records(user_id: int, start: str, end: str):
+def search_records(start: str, end: str, current_user: dict = Depends(get_current_user)):
     conn = get_conn()
     cur = conn.cursor()
     cur.execute("""
@@ -312,7 +337,7 @@ def search_records(user_id: int, start: str, end: str):
         JOIN users ON records.user_id = users.id
         WHERE records.user_id = ? AND records.date BETWEEN ? AND ?
         ORDER BY records.date DESC
-    """, (user_id, start, end))
+    """, (current_user["id"], start, end))
     rows = cur.fetchall()
 
     result = []
@@ -326,7 +351,7 @@ def search_records(user_id: int, start: str, end: str):
 
 
 @app.get("/stats")
-def get_stats(user_id: int):
+def get_stats(current_user: dict = Depends(get_current_user)):
     conn = get_conn()
     cur = conn.cursor()
     cur.execute("""
@@ -336,7 +361,7 @@ def get_stats(user_id: int):
                MIN(weight) AS min_weight,
                MAX(weight) AS max_weight
         FROM records WHERE user_id = ?
-    """, (user_id,))
+    """, (current_user["id"],))
     row = cur.fetchone()
     conn.close()
 
@@ -352,32 +377,30 @@ class GoalIn(BaseModel):
 
 
 @app.post("/goals")
-def set_goal(goal: GoalIn):
+def set_goal(goal: GoalIn, current_user: dict = Depends(get_current_user)):
     conn = get_conn()
     cur = conn.cursor()
 
-    cur.execute("SELECT id FROM users WHERE id = ?", (goal.user_id,))
-    if cur.fetchone() is None:
-        conn.close()
-        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다")
+    user_id = current_user["id"]
 
     cur.execute(
         "DELETE FROM goals WHERE user_id = ? AND goal_type = ?",
-        (goal.user_id, goal.goal_type)
+        (user_id, goal.goal_type)
     )
     cur.execute(
         "INSERT INTO goals (user_id, goal_type, target_value) VALUES (?, ?, ?)",
-        (goal.user_id, goal.goal_type, goal.target_value)
+        (user_id, goal.goal_type, goal.target_value)
     )
 
     conn.commit()
     conn.close()
-    return {"user_id": goal.user_id, "goal_type": goal.goal_type,
+    return {"user_id": user_id, "goal_type": goal.goal_type,
             "target_value": goal.target_value}
 
 
 @app.get("/goals")
-def get_goals(user_id: int):
+def get_goals(current_user: dict = Depends(get_current_user)):
+    user_id = current_user["id"]
     conn = get_conn()
     cur = conn.cursor()
 
@@ -410,7 +433,7 @@ def get_goals(user_id: int):
 
 
 @app.get("/weekly-report")
-def weekly_report(user_id: int):
+def weekly_report(current_user: dict = Depends(get_current_user)):
     today = datetime.now()
     week1_start = (today - timedelta(days=7)).strftime("%Y-%m-%d")
     week2_start = (today - timedelta(days=14)).strftime("%Y-%m-%d")
@@ -423,14 +446,14 @@ def weekly_report(user_id: int):
         SELECT ROUND(AVG(weight), 1) AS avg_weight, COUNT(*) AS count
         FROM records
         WHERE user_id = ? AND date >= ? AND date <= ?
-    """, (user_id, week1_start, today_str))
+    """, (current_user["id"], week1_start, today_str))
     this_week = cur.fetchone()
 
     cur.execute("""
         SELECT ROUND(AVG(weight), 1) AS avg_weight, COUNT(*) AS count
         FROM records
         WHERE user_id = ? AND date >= ? AND date < ?
-    """, (user_id, week2_start, week1_start))
+    """, (current_user["id"], week2_start, week1_start))
     last_week = cur.fetchone()
 
     conn.close()
@@ -453,22 +476,24 @@ class GuardianshipIn(BaseModel):
 
 
 @app.post("/guardianships")
-def create_guardianship(g: GuardianshipIn):
-    if g.guardian_id == g.patient_id:
+def create_guardianship(g: GuardianshipIn, current_user: dict = Depends(get_current_user)):
+    guardian_id = current_user["id"]
+
+    if guardian_id == g.patient_id:
         raise HTTPException(status_code=400, detail="자기 자신을 보호자로 등록할 수 없습니다")
 
     conn = get_conn()
     cur = conn.cursor()
 
-    cur.execute("SELECT id FROM users WHERE id IN (?, ?)", (g.guardian_id, g.patient_id))
-    if len(cur.fetchall()) != 2:
+    cur.execute("SELECT id FROM users WHERE id = ?", (g.patient_id,))
+    if cur.fetchone() is None:
         conn.close()
-        raise HTTPException(status_code=404, detail="존재하지 않는 사용자가 포함되어 있습니다")
+        raise HTTPException(status_code=404, detail="존재하지 않는 사용자입니다")
 
     try:
         cur.execute(
             "INSERT INTO guardianships (guardian_id, patient_id, relation) VALUES (?, ?, ?)",
-            (g.guardian_id, g.patient_id, g.relation)
+            (guardian_id, g.patient_id, g.relation)
         )
         conn.commit()
     except sqlite3.IntegrityError:
@@ -477,12 +502,12 @@ def create_guardianship(g: GuardianshipIn):
 
     new_id = cur.lastrowid
     conn.close()
-    return {"id": new_id, "guardian_id": g.guardian_id,
+    return {"id": new_id, "guardian_id": guardian_id,
             "patient_id": g.patient_id, "relation": g.relation}
 
 
 @app.get("/guardianships")
-def get_my_patients(guardian_id: int):
+def get_my_patients(current_user: dict = Depends(get_current_user)):
     conn = get_conn()
     cur = conn.cursor()
     cur.execute("""
@@ -491,7 +516,7 @@ def get_my_patients(guardian_id: int):
         FROM guardianships
         JOIN users ON guardianships.patient_id = users.id
         WHERE guardianships.guardian_id = ?
-    """, (guardian_id,))
+    """, (current_user["id"],))
     rows = cur.fetchall()
     conn.close()
     return {"count": len(rows), "patients": [dict(r) for r in rows]}
@@ -506,11 +531,11 @@ def is_guardian_of(cur, guardian_id, patient_id):
 
 
 @app.get("/guardian/records")
-def get_patient_records(guardian_id: int, patient_id: int):
+def get_patient_records(patient_id: int, current_user: dict = Depends(get_current_user)):
     conn = get_conn()
     cur = conn.cursor()
 
-    if not is_guardian_of(cur, guardian_id, patient_id):
+    if not is_guardian_of(cur, current_user["id"], patient_id):
         conn.close()
         raise HTTPException(status_code=403, detail="이 대상자의 기록을 볼 권한이 없습니다")
 
@@ -531,3 +556,102 @@ def get_patient_records(guardian_id: int, patient_id: int):
 
     conn.close()
     return {"count": len(result), "records": result}
+
+
+class SignupIn(BaseModel):
+    name: str
+    password: str = Field(..., min_length=4)
+    birth_year: int = 0
+    gender: str = ""
+
+
+@app.post("/signup")
+def signup(user: SignupIn):
+    conn = get_conn()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            "INSERT INTO users (name, password_hash, role, birth_year, gender) VALUES (?, ?, 'user', ?, ?)",
+            (user.name, hash_password(user.password), user.birth_year, user.gender)
+        )
+        conn.commit()
+        new_id = cur.lastrowid
+    except sqlite3.IntegrityError:
+        conn.close()
+        raise HTTPException(status_code=400, detail="이미 존재하는 사용자입니다")
+    conn.close()
+    return {"id": new_id, "name": user.name}
+
+
+@app.post("/login")
+def login(form: OAuth2PasswordRequestForm = Depends()):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM users WHERE name = ?", (form.username,))
+    row = cur.fetchone()
+    conn.close()
+
+    if row is None or not verify_password(form.password, row["password_hash"]):
+        raise HTTPException(status_code=401, detail="이름 또는 비밀번호가 올바르지 않습니다")
+
+    token = create_token(row["id"], row["name"], row["role"])
+    return {"access_token": token, "token_type": "bearer"}
+
+
+@app.get("/me")
+def read_me(current_user: dict = Depends(get_current_user)):
+    return current_user
+
+
+@app.get("/my/records")
+def get_my_records(current_user: dict = Depends(get_current_user)):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT records.*, users.name AS user_name
+        FROM records
+        JOIN users ON records.user_id = users.id
+        WHERE records.user_id = ?
+        ORDER BY records.date DESC
+    """, (current_user["id"],))
+    rows = cur.fetchall()
+
+    result = []
+    for row in rows:
+        record = dict(row)
+        record["warnings"] = get_warnings(cur, row["id"])
+        result.append(record)
+
+    conn.close()
+    return {"count": len(result), "records": result}
+
+
+@app.post("/my/records")
+def create_my_record(record: RecordIn, current_user: dict = Depends(get_current_user)):
+    record.user_id = current_user["id"]
+    return create_record(record)
+
+
+@app.get("/admin/records")
+def get_all_records(admin: dict = Depends(require_admin)):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT records.*, users.name AS user_name
+        FROM records
+        JOIN users ON records.user_id = users.id
+        ORDER BY records.date DESC
+    """)
+    rows = cur.fetchall()
+    conn.close()
+    return {"count": len(rows), "records": [dict(r) for r in rows]}
+
+
+@app.get("/admin/users")
+def get_all_users(admin: dict = Depends(require_admin)):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT id, name, role, birth_year, gender, created_at FROM users")
+    rows = cur.fetchall()
+    conn.close()
+    return {"count": len(rows), "users": [dict(r) for r in rows]}
